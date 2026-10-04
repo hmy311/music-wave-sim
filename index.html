@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管弦樂器物理模擬 - 駐波與氣體分子運動</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- KaTeX for rendering mathematical formulas -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+    </style>
+</head>
+
+<body class="min-h-screen flex flex-col justify-between overflow-x-hidden">
+
+    <!-- Header -->
+    <header class="border-b border-slate-800 bg-slate-900/80 sticky top-0 z-50 backdrop-blur-md">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-4">
+            <div class="flex items-center space-x-3">
+                <div class="p-2 bg-indigo-600/30 text-indigo-400 rounded-xl border border-indigo-500/30">
+                    <i class="fa-solid fa-wave-square text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-lg text-slate-100 tracking-wide">管弦樂器物理模擬器</h1>
+                    <p class="text-xs text-slate-400">駐波形成原理與空氣分子微觀運動視覺化</p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-3">
+                <button id="audioToggleBtn"
+                    class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium rounded-lg border border-slate-700 transition-all flex items-center gap-2">
+                    <i class="fa-solid fa-volume-xmark text-amber-400" id="audioIcon"></i>
+                    <span id="audioText">聲音已關閉</span>
+                </button>
+                <button id="resetBtn"
+                    class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm rounded-lg border border-slate-700 transition flex items-center gap-1.5"
+                    title="重置參數">
+                    <i class="fa-solid fa-rotate-right"></i>
+                    <span class="hidden sm:inline">重置</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 py-6 w-full flex-grow grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+        <!-- Left Column: Canvas & Visualization (8 cols on lg) -->
+        <section class="lg:col-span-8 flex flex-col gap-4">
+            <!-- Canvas Container -->
+            <div class="glass-panel rounded-2xl p-4 flex flex-col relative shadow-2xl">
+                <!-- Instrument Mode Selector Header -->
+                <div
+                    class="flex flex-wrap items-center justify-between gap-3 mb-3 bg-slate-900/60 p-1.5 rounded-xl border border-slate-800">
+                    <button
+                        class="mode-btn flex-1 py-2 px-3 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 bg-indigo-600 text-white shadow-lg"
+                        data-mode="string">
+                        <i class="fa-solid fa-guitar"></i> 弦樂器 (兩端固定)
+                    </button>
+                    <button
+                        class="mode-btn flex-1 py-2 px-3 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 text-slate-400 hover:text-slate-200"
+                        data-mode="openPipe">
+                        <i class="fa-solid fa-wind"></i> 開管樂器 (兩端開口)
+                    </button>
+                    <button
+                        class="mode-btn flex-1 py-2 px-3 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 text-slate-400 hover:text-slate-200"
+                        data-mode="closedPipe">
+                        <i class="fa-solid fa-drum-steelpan"></i> 閉管樂器 (單端閉口)
+                    </button>
+                </div>
+
+                <!-- Externalized Dedicated Legend Bar (No overlay on canvas) -->
+                <div
+                    class="flex flex-wrap items-center justify-between gap-3 px-3 py-2 bg-slate-900/80 rounded-xl border border-slate-800 text-xs text-slate-300 mb-3">
+                    <div class="flex items-center gap-4 flex-wrap">
+                        <div class="flex items-center gap-2">
+                            <span class="w-3.5 h-1 bg-cyan-400 rounded-full inline-block"></span>
+                            <span>向右行進波 (y<sub>1</sub>)</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="w-3.5 h-1 bg-rose-400 rounded-full inline-block"></span>
+                            <span>向左行進波 (y<sub>2</sub>)</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="w-4 h-1.5 bg-purple-400 rounded-full inline-block shadow-sm"></span>
+                            <span class="text-slate-100 font-semibold">合成駐波 (y)</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3 border-l border-slate-700/60 pl-3">
+                        <div class="flex items-center gap-1.5">
+                            <span class="w-2.5 h-2.5 rounded-full bg-red-500 inline-block"></span>
+                            <span class="text-slate-400">波節 N</span>
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block"></span>
+                            <span class="text-slate-400">波腹 A</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Simulation Canvas -->
+                <div
+                    class="relative w-full aspect-[16/9] bg-slate-950 rounded-xl overflow-hidden border border-slate-800">
+                    <canvas id="simCanvas" class="w-full h-full block cursor-crosshair"></canvas>
+
+                    <!-- Canvas Floating Controls (Bottom Left Only) -->
+                    <div
+                        class="absolute bottom-3 left-3 flex items-center gap-2 bg-slate-900/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-slate-700/60 text-xs">
+                        <button id="playPauseBtn"
+                            class="text-indigo-400 hover:text-indigo-300 font-bold flex items-center gap-1.5">
+                            <i class="fa-solid fa-pause text-sm" id="playIcon"></i>
+                            <span id="playText">暫停</span>
+                        </button>
+                        <span class="text-slate-600">|</span>
+                        <span class="text-slate-300">速度:</span>
+                        <input id="timeSpeedSlider" type="range" min="0.1" max="2.0" step="0.1" value="1.0"
+                            class="w-16 h-1 accent-indigo-500 bg-slate-700 rounded-lg appearance-none cursor-pointer">
+                    </div>
+                </div>
+
+                <!-- Particle View Toggle / Info Footer -->
+                <div class="mt-3 flex flex-wrap justify-between items-center text-xs text-slate-400 px-1 gap-2">
+                    <div class="flex items-center gap-3">
+                        <label class="inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="showParticleGrid" checked class="sr-only peer">
+                            <div
+                                class="w-8 h-4 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-600 relative">
+                            </div>
+                            <span class="ml-2 text-slate-300">顯示微觀質點/空氣分子模擬</span>
+                        </label>
+                        <label class="inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="showComponents" checked class="sr-only peer">
+                            <div
+                                class="w-8 h-4 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-600 relative">
+                            </div>
+                            <span class="ml-2 text-slate-300">顯示行進分波</span>
+                        </label>
+                    </div>
+                    <div id="boundaryDescription"
+                        class="text-indigo-300 font-medium bg-indigo-950/50 px-2.5 py-1 rounded-md border border-indigo-800/40">
+                        邊界條件：兩端固定波節 (Fixed-Fixed)
+                    </div>
+                </div>
+            </div>
+
+            <!-- Realtime Physics Dashboard -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div class="glass-panel p-3.5 rounded-xl flex flex-col justify-between">
+                    <span class="text-xs text-slate-400 font-medium">波長 Lambda </span>
+                    <div class="flex items-baseline gap-1 mt-1">
+                        <span id="dashWavelength" class="text-xl font-bold text-cyan-400">0.00</span>
+                        <span class="text-xs text-slate-400">m</span>
+                    </div>
+                </div>
+                <div class="glass-panel p-3.5 rounded-xl flex flex-col justify-between">
+                    <span class="text-xs text-slate-400 font-medium">諧振頻率 f</span>
+                    <div class="flex items-baseline gap-1 mt-1">
+                        <span id="dashFrequency" class="text-xl font-bold text-emerald-400">0.00</span>
+                        <span class="text-xs text-slate-400">Hz</span>
+                    </div>
+                </div>
+                <div class="glass-panel p-3.5 rounded-xl flex flex-col justify-between">
+                    <span class="text-xs text-slate-400 font-medium">振盪週期 T</span>
+                    <div class="flex items-baseline gap-1 mt-1">
+                        <span id="dashPeriod" class="text-xl font-bold text-purple-400">0.00</span>
+                        <span class="text-xs text-slate-400">ms</span>
+                    </div>
+                </div>
+                <div class="glass-panel p-3.5 rounded-xl flex flex-col justify-between">
+                    <span class="text-xs text-slate-400 font-medium">當前諧音階次</span>
+                    <div class="flex items-baseline gap-1 mt-1">
+                        <span id="dashHarmonicName" class="text-base font-bold text-amber-400 truncate">基頻 (1st)</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Right Column: Control Panel & Formulas (4 cols on lg) -->
+        <section class="lg:col-span-4 flex flex-col gap-4">
+
+            <!-- Controls Panel -->
+            <div class="glass-panel rounded-2xl p-5 space-y-5">
+                <h2
+                    class="text-base font-bold text-slate-200 border-b border-slate-700/80 pb-2.5 flex items-center gap-2">
+                    <i class="fa-solid fa-sliders text-indigo-400"></i> 物理參數控制 (Parameters)
+                </h2>
+
+                <!-- Harmonics Control Container -->
+                <div class="space-y-4">
+                    <!-- N Slider (For String & Open Pipe) -->
+                    <div id="nControlGroup"
+                        class="bg-slate-900/60 p-3.5 rounded-xl border border-slate-800 transition-all">
+                        <div class="flex justify-between items-center mb-1.5">
+                            <label for="nSlider" class="text-sm font-semibold text-indigo-300">
+                                諧波階數 n 值 <span class="text-xs font-normal text-slate-400">(n=1,2,3...)</span>
+                            </label>
+                            <span id="nValueDisplay"
+                                class="text-base font-bold text-indigo-400 bg-indigo-950/80 px-2 py-0.5 rounded border border-indigo-800">1</span>
+                        </div>
+                        <input id="nSlider" type="range" min="1" max="8" step="1" value="1"
+                            class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                        <div class="flex justify-between text-[10px] text-slate-500 mt-1">
+                            <span>n=1 (基頻)</span>
+                            <span>n=4</span>
+                            <span>n=8 (高次諧音)</span>
+                        </div>
+                    </div>
+
+                    <!-- M Slider (For Closed Pipe) -->
+                    <div id="mControlGroup"
+                        class="bg-slate-900/60 p-3.5 rounded-xl border border-slate-800 transition-all hidden">
+                        <div class="flex justify-between items-center mb-1.5">
+                            <label for="mSlider" class="text-sm font-semibold text-rose-300">
+                                諧波階數 m 值 <span class="text-xs font-normal text-slate-400">(奇數 m=1,3,5...)</span>
+                            </label>
+                            <span id="mValueDisplay"
+                                class="text-base font-bold text-rose-400 bg-rose-950/80 px-2 py-0.5 rounded border border-rose-800">1</span>
+                        </div>
+                        <input id="mSlider" type="range" min="1" max="15" step="2" value="1"
+                            class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-rose-500">
+                        <div class="flex justify-between text-[10px] text-slate-500 mt-1">
+                            <span>m=1 (基頻)</span>
+                            <span>m=7</span>
+                            <span>m=15 (第8諧音)</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tube/String Length L Slider -->
+                <div class="space-y-1.5">
+                    <div class="flex justify-between text-sm">
+                        <span class="text-slate-300 font-medium">管長 or 弦長 L</span>
+                        <span id="lValueDisplay" class="font-semibold text-slate-200">1.00 m</span>
+                    </div>
+                    <input id="lSlider" type="range" min="0.40" max="2.00" step="0.05" value="1.00"
+                        class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500">
+                </div>
+
+                <!-- Wave Speed v Slider -->
+                <div class="space-y-1.5">
+                    <div class="flex justify-between text-sm">
+                        <span class="text-slate-300 font-medium">波速 v</span>
+                        <span id="vValueDisplay" class="font-semibold text-slate-200">340 m/s</span>
+                    </div>
+                    <input id="vSlider" type="range" min="100" max="600" step="10" value="340"
+                        class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500">
+                </div>
+
+                <!-- Amplitude A Slider -->
+                <div class="space-y-1.5">
+                    <div class="flex justify-between text-sm">
+                        <span class="text-slate-300 font-medium">振幅 A</span>
+                        <span id="aValueDisplay" class="font-semibold text-slate-200">1.0x</span>
+                    </div>
+                    <input id="aSlider" type="range" min="0.3" max="2.0" step="0.1" value="1.0"
+                        class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500">
+                </div>
+            </div>
+
+            <!-- Mathematical Formula Box -->
+            <div class="glass-panel rounded-2xl p-5 space-y-3">
+                <h3 class="text-sm font-bold text-slate-200 flex items-center gap-2 border-b border-slate-700/80 pb-2">
+                    <i class="fa-solid fa-square-root-variable text-purple-400"></i> 物理導引與公式
+                </h3>
+
+                <!-- Dynamic Math Formula Renderer -->
+                <div class="bg-slate-950/70 p-3 rounded-xl border border-slate-800 text-xs sm:text-sm text-center space-y-2"
+                    id="formulaContainer">
+                    <div id="mathFormula1" class="py-1"></div>
+                    <div id="mathFormula2" class="py-1 border-t border-slate-800/80"></div>
+                </div>
+
+                <!-- Explanation Notes -->
+                <p id="modeExplanation" class="text-xs text-slate-400 leading-relaxed">
+                    弦樂器兩端固定，反射波在端點發生相位翻轉，形成固定波節 (Node)。
+                </p>
+            </div>
+
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-slate-800/80 bg-slate-950 py-3 text-center text-xs text-slate-500">
+        <p>管弦樂器物理模擬網頁 &copy; HTML5 Canvas & Web Audio Physics Simulation</p>
+    </footer>
+
+    <script>
+        // --- Core State Management ---
+        const state = {
+            mode: 'string', // 'string', 'openPipe', 'closedPipe'
+            n: 1,           // Even/Odd harmonics index for String/OpenPipe
+            m: 1,           // Odd harmonics index for ClosedPipe
+            L: 1.00,        // Pipe/String Length in meters
+            v: 340,         // Wave speed in m/s
+            A: 1.0,         // Relative amplitude
+            isPlaying: true,
+            timeSpeed: 1.0,
+            simTime: 0,     // Simulation time variable
+            showParticles: true,
+            showComponents: true,
+            audioEnabled: false
+        };
+
+        // DOM Elements
+        const canvas = document.getElementById('simCanvas');
+        const ctx = canvas.getContext('2d');
+        const nSlider = document.getElementById('nSlider');
+        const mSlider = document.getElementById('mSlider');
+        const lSlider = document.getElementById('lSlider');
+        const vSlider = document.getElementById('vSlider');
+        const aSlider = document.getElementById('aSlider');
+        const timeSpeedSlider = document.getElementById('timeSpeedSlider');
+        const playPauseBtn = document.getElementById('playPauseBtn');
+        const playIcon = document.getElementById('playIcon');
+        const playText = document.getElementById('playText');
+        const audioToggleBtn = document.getElementById('audioToggleBtn');
+        const audioIcon = document.getElementById('audioIcon');
+        const audioText = document.audioText;
+        const resetBtn = document.getElementById('resetBtn');
+
+        const nControlGroup = document.getElementById('nControlGroup');
+        const mControlGroup = document.getElementById('mControlGroup');
+        const nValueDisplay = document.getElementById('nValueDisplay');
+        const mValueDisplay = document.getElementById('mValueDisplay');
+        const lValueDisplay = document.getElementById('lValueDisplay');
+        const vValueDisplay = document.getElementById('vValueDisplay');
+        const aValueDisplay = document.getElementById('aValueDisplay');
+
+        const dashWavelength = document.getElementById('dashWavelength');
+        const dashFrequency = document.getElementById('dashFrequency');
+        const dashPeriod = document.getElementById('dashPeriod');
+        const dashHarmonicName = document.getElementById('dashHarmonicName');
+        const boundaryDescription = document.getElementById('boundaryDescription');
+        const modeExplanation = document.getElementById('modeExplanation');
+
+        const showParticleGrid = document.getElementById('showParticleGrid');
+        const showComponents = document.getElementById('showComponents');
+
+        // Web Audio API Setup
+        let audioCtx = null;
+        let oscillator = null;
+        let gainNode = null;
+
+        function initAudio() {
+            if (!audioCtx) {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new AudioContext();
+                oscillator = audioCtx.createOscillator();
+                gainNode = audioCtx.createGain();
+
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(calculatePhysics().f, audioCtx.currentTime);
+                gainNode.gain.setValueAtTime(0, audioCtx.currentTime); // Start muted
+
+                oscillator.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+                oscillator.start();
+            }
+        }
+
+        function updateAudioFrequency(freq) {
+            if (audioCtx && oscillator && state.audioEnabled) {
+                // Clamp audio frequency to human playable safe range (20Hz to 4000Hz)
+                const safeFreq = Math.max(20, Math.min(4000, freq));
+                oscillator.frequency.setTargetAtTime(safeFreq, audioCtx.currentTime, 0.05);
+            }
+        }
+
+        // Physics Formulas Calculation
+        function calculatePhysics() {
+            let lambda = 0;
+            let f = 0;
+            let harmonicIndex = 1;
+
+            if (state.mode === 'string' || state.mode === 'openPipe') {
+                harmonicIndex = state.n;
+                lambda = (2 * state.L) / state.n;
+            } else { // closedPipe
+                harmonicIndex = state.m;
+                lambda = (4 * state.L) / state.m;
+            }
+
+            f = state.v / lambda;
+            const period = (1 / f) * 1000; // in milliseconds
+
+            return { lambda, f, period, harmonicIndex };
+        }
+
+        function updateUI() {
+            const phys = calculatePhysics();
+
+            // Dynamic Dashboard Text
+            dashWavelength.textContent = phys.lambda.toFixed(3);
+            dashFrequency.textContent = phys.f.toFixed(1);
+            dashPeriod.textContent = phys.period.toFixed(2);
+
+            // Harmonic Name
+            if (state.mode === 'closedPipe') {
+                const harmonicOrd = Math.floor((state.m + 1) / 2);
+                dashHarmonicName.textContent = state.m === 1 ? '基頻 (1st Harmonic)' : `第 ${state.m} 諧音 (奇數諧波)`;
+            } else {
+                dashHarmonicName.textContent = state.n === 1 ? '基頻 (1st Harmonic)' : `第 ${state.n} 諧音 (${state.n}th Harmonic)`;
+            }
+
+            // Formula Text Latex Rendering
+            if (window.katex) {
+                if (state.mode === 'string') {
+                    katex.render(`L = \\frac{\\lambda}{2} \\cdot n \\implies \\lambda = \\frac{2L}{${state.n}}`, document.getElementById('mathFormula1'));
+                    katex.render(`f = \\frac{v}{\\lambda} = \\frac{n \\cdot v}{2L} = ${phys.f.toFixed(1)} \\text{ Hz}`, document.getElementById('mathFormula2'));
+                    boundaryDescription.textContent = '邊界條件：兩端固定波節 (Node-Node)';
+                    modeExplanation.textContent = '弦樂器兩端固定，反射波在端點發生 180° 相位反轉，兩端均為位移波節 (Node)。';
+                } else if (state.mode === 'openPipe') {
+                    katex.render(`L = \\frac{\\lambda}{2} \\cdot n \\implies \\lambda = \\frac{2L}{${state.n}}`, document.getElementById('mathFormula1'));
+                    katex.render(`f = \\frac{v}{\\lambda} = \\frac{n \\cdot v}{2L} = ${phys.f.toFixed(1)} \\text{ Hz}`, document.getElementById('mathFormula2'));
+                    boundaryDescription.textContent = '邊界條件：兩端開口波腹 (Antinode-Antinode)';
+                    modeExplanation.textContent = '開管樂器兩端自由開放，空氣分子位移最大，兩端均為位移波腹 (Antinode)。';
+                } else { // closedPipe
+                    katex.render(`L = \\frac{\\lambda}{4} \\cdot m \\implies \\lambda = \\frac{4L}{${state.m}}`, document.getElementById('mathFormula1'));
+                    katex.render(`f = \\frac{v}{\\lambda} = \\frac{m \\cdot v}{4L} = ${phys.f.toFixed(1)} \\text{ Hz}`, document.getElementById('mathFormula2'));
+                    boundaryDescription.textContent = '邊界條件：閉口端波節 / 開口端波腹 (Node-Antinode)';
+                    modeExplanation.textContent = '閉管樂器閉口端空氣無法移動 (波節)，開口端自由振動 (波腹)，僅產生奇數次諧音 (m=1, 3, 5...)。';
+                }
+            }
+
+            // Audio update
+            updateAudioFrequency(phys.f);
+        }
+
+        // Resize Canvas dynamically
+        function resizeCanvas() {
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * window.devicePixelRatio || rect.width;
+            canvas.height = rect.height * window.devicePixelRatio || rect.height;
+        }
+
+        // Main Simulation Draw Function
+        function drawSimulation() {
+            const w = canvas.width;
+            const h = canvas.height;
+
+            ctx.clearRect(0, 0, w, h);
+
+            // Canvas Margins & Pipe Boundaries
+            const paddingX = w * 0.1;
+            const pipeWidth = w - 2 * paddingX;
+            const centerY = h * 0.40;
+            const particleAreaY = h * 0.78;
+            const maxWaveHeight = h * 0.22;
+
+            const phys = calculatePhysics();
+            const k = (2 * Math.PI) / phys.lambda; // Wave number (scaled)
+            const omega = 2 * Math.PI * phys.f;    // Angular frequency
+
+            // Spatial wave number for pixel mapping
+            // Wave spatial frequency along the pipe
+            let spatialK = 0;
+            if (state.mode === 'string' || state.mode === 'openPipe') {
+                spatialK = (Math.PI * state.n) / pipeWidth;
+            } else {
+                spatialK = (Math.PI * state.m) / (2 * pipeWidth);
+            }
+
+            // --- 1. Draw Background Grid & Pipe Outer Bounds ---
+            ctx.strokeStyle = 'rgba(51, 65, 85, 0.4)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(paddingX, centerY);
+            ctx.lineTo(paddingX + pipeWidth, centerY);
+            ctx.stroke();
+
+            // Draw Instrument Physical Body Outline
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = '#475569';
+
+            if (state.mode === 'string') {
+                // String supports / Fixed ends
+                ctx.fillStyle = '#64748b';
+                ctx.fillRect(paddingX - 10, centerY - 25, 10, 50);
+                ctx.fillRect(paddingX + pipeWidth, centerY - 25, 10, 50);
+            } else if (state.mode === 'openPipe') {
+                // Open Tube Walls (Top and Bottom borders)
+                ctx.beginPath();
+                ctx.moveTo(paddingX, centerY - maxWaveHeight - 10);
+                ctx.lineTo(paddingX + pipeWidth, centerY - maxWaveHeight - 10);
+                ctx.moveTo(paddingX, centerY + maxWaveHeight + 10);
+                ctx.lineTo(paddingX + pipeWidth, centerY + maxWaveHeight + 10);
+                ctx.stroke();
+            } else if (state.mode === 'closedPipe') {
+                // Closed Tube: Left end closed, Right end open
+                ctx.beginPath();
+                // Top wall
+                ctx.moveTo(paddingX, centerY - maxWaveHeight - 10);
+                ctx.lineTo(paddingX + pipeWidth, centerY - maxWaveHeight - 10);
+                // Closed left wall
+                ctx.lineTo(paddingX, centerY + maxWaveHeight + 10);
+                // Bottom wall
+                ctx.lineTo(paddingX + pipeWidth, centerY + maxWaveHeight + 10);
+                ctx.stroke();
+
+                // Fill closed left cap
+                ctx.fillStyle = '#334155';
+                ctx.fillRect(paddingX - 12, centerY - maxWaveHeight - 12, 12, (maxWaveHeight + 10) * 2 + 4);
+            }
+
+            // --- 2. Calculate and Draw Wave Graphs ---
+            const t = state.simTime;
+            const amp = maxWaveHeight * 0.4 * state.A;
+
+            // Paths for waves
+            const pathRight = new Path2D();
+            const pathLeft = new Path2D();
+            const pathStanding = new Path2D();
+
+            let firstPoint = true;
+
+            for (let px = 0; px <= pipeWidth; px += 2) {
+                const x = paddingX + px;
+                let y1 = 0; // Right traveling wave
+                let y2 = 0; // Left traveling wave
+                let ySum = 0; // Standing wave
+
+                // Mathematical Formulation based on Boundary Conditions
+                if (state.mode === 'string') {
+                    // Fixed-Fixed: y(x,t) = 2A sin(kx) cos(wt)
+                    y1 = amp * Math.sin(spatialK * px - 3 * t);
+                    y2 = amp * Math.sin(spatialK * px + 3 * t);
+                    ySum = 2 * amp * Math.sin(spatialK * px) * Math.cos(3 * t);
+                } else if (state.mode === 'openPipe') {
+                    // Antinode-Antinode: y(x,t) = 2A cos(kx) cos(wt)
+                    y1 = amp * Math.cos(spatialK * px - 3 * t);
+                    y2 = amp * Math.cos(spatialK * px + 3 * t);
+                    ySum = 2 * amp * Math.cos(spatialK * px) * Math.cos(3 * t);
+                } else if (state.mode === 'closedPipe') {
+                    // Node at x=0, Antinode at x=L: y(x,t) = 2A sin(kx) cos(wt)
+                    y1 = amp * Math.sin(spatialK * px - 3 * t);
+                    y2 = amp * Math.sin(spatialK * px + 3 * t);
+                    ySum = 2 * amp * Math.sin(spatialK * px) * Math.cos(3 * t);
+                }
+
+                if (firstPoint) {
+                    pathRight.moveTo(x, centerY - y1);
+                    pathLeft.moveTo(x, centerY - y2);
+                    pathStanding.moveTo(x, centerY - ySum);
+                    firstPoint = false;
+                } else {
+                    pathRight.lineTo(x, centerY - y1);
+                    pathLeft.lineTo(x, centerY - y2);
+                    pathStanding.lineTo(x, centerY - ySum);
+                }
+            }
+
+            // Render Traveling Wave Right (Light Cyan/Blue)
+            if (state.showComponents) {
+                ctx.strokeStyle = 'rgba(34, 211, 238, 0.55)';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([4, 4]);
+                ctx.stroke(pathRight);
+
+                // Render Traveling Wave Left (Light Red/Pink)
+                ctx.strokeStyle = 'rgba(251, 113, 133, 0.55)';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([4, 4]);
+                ctx.stroke(pathLeft);
+                ctx.setLineDash([]); // Reset dash
+            }
+
+            // Render Composite Standing Wave (Bold Purple/Violet)
+            ctx.strokeStyle = '#c084fc';
+            ctx.lineWidth = 4.5;
+            ctx.shadowColor = 'rgba(192, 132, 252, 0.5)';
+            ctx.shadowBlur = 10;
+            ctx.stroke(pathStanding);
+            ctx.shadowBlur = 0; // Reset shadow
+
+            // --- 3. Draw Nodes (N) & Antinodes (A) Markers ---
+            const count = (state.mode === 'closedPipe') ? state.m : state.n;
+            let nodePositions = [];
+            let antinodePositions = [];
+
+            if (state.mode === 'string') {
+                for (let i = 0; i <= count; i++) {
+                    nodePositions.push(i * (pipeWidth / count));
+                }
+                for (let i = 0; i < count; i++) {
+                    antinodePositions.push((i + 0.5) * (pipeWidth / count));
+                }
+            } else if (state.mode === 'openPipe') {
+                for (let i = 0; i <= count; i++) {
+                    antinodePositions.push(i * (pipeWidth / count));
+                }
+                for (let i = 0; i < count; i++) {
+                    nodePositions.push((i + 0.5) * (pipeWidth / count));
+                }
+            } else if (state.mode === 'closedPipe') {
+                for (let i = 0; i < count; i += 2) {
+                    nodePositions.push(i * (pipeWidth / count));
+                    antinodePositions.push((i + 1) * (pipeWidth / count));
+                }
+            }
+
+            // Draw Node Indicators (Red Circles)
+            nodePositions.forEach(px => {
+                const x = paddingX + px;
+                ctx.fillStyle = '#ef4444';
+                ctx.beginPath();
+                ctx.arc(x, centerY, 5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#f8fafc';
+                ctx.font = '10px Inter';
+                ctx.fillText('N', x - 3, centerY - 10);
+            });
+
+            // Draw Antinode Indicators (Green Circles)
+            antinodePositions.forEach(px => {
+                const x = paddingX + px;
+                ctx.fillStyle = '#34d399';
+                ctx.beginPath();
+                ctx.arc(x, centerY, 5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#f8fafc';
+                ctx.font = '10px Inter';
+                ctx.fillText('A', x - 3, centerY - 10);
+            });
+
+            // --- 4. Microscopic Particle / Gas Molecule Simulation ---
+            if (state.showParticles) {
+                // Boundary Box for Gas Tube/String Molecules
+                ctx.fillStyle = 'rgba(15, 23, 42, 0.6)';
+                ctx.strokeStyle = '#334155';
+                ctx.lineWidth = 1.5;
+                ctx.fillRect(paddingX, particleAreaY - 35, pipeWidth, 70);
+                ctx.strokeRect(paddingX, particleAreaY - 35, pipeWidth, 70);
+
+                const numCols = 60;
+                const numRows = 5;
+
+                for (let col = 0; col <= numCols; col++) {
+                    const eqX = (col / numCols) * pipeWidth; // Equilibrium position
+
+                    // Calculate standing wave displacement at this position
+                    let dispFactor = 0;
+                    if (state.mode === 'string' || state.mode === 'closedPipe') {
+                        dispFactor = Math.sin(spatialK * eqX) * Math.cos(3 * t);
+                    } else if (state.mode === 'openPipe') {
+                        dispFactor = Math.cos(spatialK * eqX) * Math.cos(3 * t);
+                    }
+
+                    // Displacement magnitude in pixels
+                    const maxDisp = 18 * state.A;
+                    const displacement = dispFactor * maxDisp;
+
+                    // Color based on local density (pressure variation) or displacement
+                    // Pressure P is proportional to -dy/dx
+                    let derivative = 0;
+                    if (state.mode === 'string' || state.mode === 'closedPipe') {
+                        derivative = Math.cos(spatialK * eqX) * Math.cos(3 * t);
+                    } else {
+                        derivative = -Math.sin(spatialK * eqX) * Math.cos(3 * t);
+                    }
+
+                    // Color gradient: High density (Compression) = Red/Orange, Low density (Rarefaction) = Blue
+                    const pVal = Math.max(-1, Math.min(1, derivative));
+                    const r = Math.floor(128 + 127 * pVal);
+                    const b = Math.floor(128 - 127 * pVal);
+                    const color = `rgb(${r}, 100, ${b})`;
+
+                    for (let row = 0; row < numRows; row++) {
+                        const rowY = particleAreaY - 20 + row * 10;
+                        const posX = paddingX + eqX + displacement;
+
+                        ctx.fillStyle = color;
+                        ctx.beginPath();
+                        ctx.arc(posX, rowY, 2.8, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+
+                // Label for Particle Box
+                ctx.fillStyle = '#94a3b8';
+                ctx.font = '11px Inter';
+                ctx.fillText('微觀氣體分子 / 質點位移與壓強 (密處偏紅，疏處偏藍)', paddingX + 8, particleAreaY - 22);
+            }
+        }
+
+        // Animation Loop
+        let lastTimestamp = 0;
+        function animate(timestamp) {
+            if (!lastTimestamp) lastTimestamp = timestamp;
+            const deltaTime = (timestamp - lastTimestamp) / 1000;
+            lastTimestamp = timestamp;
+
+            if (state.isPlaying) {
+                state.simTime += deltaTime * state.timeSpeed * 2.0;
+            }
+
+            drawSimulation();
+            requestAnimationFrame(animate);
+        }
+
+        // Event Listeners Initialization
+        function setupEventListeners() {
+            // Mode Buttons
+            const modeBtns = document.querySelectorAll('.mode-btn');
+            modeBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    modeBtns.forEach(b => {
+                        b.classList.remove('bg-indigo-600', 'text-white', 'shadow-lg');
+                        b.classList.add('text-slate-400');
+                    });
+                    btn.classList.add('bg-indigo-600', 'text-white', 'shadow-lg');
+                    btn.classList.remove('text-slate-400');
+
+                    state.mode = btn.dataset.mode;
+
+                    // Toggle N / M Sliders
+                    if (state.mode === 'closedPipe') {
+                        nControlGroup.classList.add('hidden');
+                        mControlGroup.classList.remove('hidden');
+                    } else {
+                        nControlGroup.classList.remove('hidden');
+                        mControlGroup.classList.add('hidden');
+                    }
+
+                    updateUI();
+                });
+            });
+
+            // Sliders Events
+            nSlider.addEventListener('input', (e) => {
+                state.n = parseInt(e.target.value);
+                nValueDisplay.textContent = state.n;
+                updateUI();
+            });
+
+            mSlider.addEventListener('input', (e) => {
+                state.m = parseInt(e.target.value);
+                mValueDisplay.textContent = state.m;
+                updateUI();
+            });
+
+            lSlider.addEventListener('input', (e) => {
+                state.L = parseFloat(e.target.value);
+                lValueDisplay.textContent = `${state.L.toFixed(2)} m`;
+                updateUI();
+            });
+
+            vSlider.addEventListener('input', (e) => {
+                state.v = parseInt(e.target.value);
+                vValueDisplay.textContent = `${state.v} m/s`;
+                updateUI();
+            });
+
+            aSlider.addEventListener('input', (e) => {
+                state.A = parseFloat(e.target.value);
+                aValueDisplay.textContent = `${state.A.toFixed(1)}x`;
+                updateUI();
+            });
+
+            timeSpeedSlider.addEventListener('input', (e) => {
+                state.timeSpeed = parseFloat(e.target.value);
+            });
+
+            // Play/Pause Button
+            playPauseBtn.addEventListener('click', () => {
+                state.isPlaying = !state.isPlaying;
+                if (state.isPlaying) {
+                    playIcon.className = 'fa-solid fa-pause text-sm';
+                    playText.textContent = '暫停';
+                } else {
+                    playIcon.className = 'fa-solid fa-play text-sm';
+                    playText.textContent = '播放';
+                }
+            });
+
+            // Checkboxes
+            showParticleGrid.addEventListener('change', (e) => {
+                state.showParticles = e.target.checked;
+            });
+
+            showComponents.addEventListener('change', (e) => {
+                state.showComponents = e.target.checked;
+            });
+
+            // Audio Toggle
+            audioToggleBtn.addEventListener('click', () => {
+                state.audioEnabled = !state.audioEnabled;
+                initAudio();
+
+                if (state.audioEnabled) {
+                    audioCtx.resume();
+                    gainNode.gain.setTargetAtTime(0.15, audioCtx.currentTime, 0.05);
+                    audioIcon.className = 'fa-solid fa-volume-high text-emerald-400';
+                    audioText.textContent = '發聲中';
+                    audioToggleBtn.classList.add('border-emerald-500/50', 'bg-emerald-950/30');
+                } else {
+                    gainNode.gain.setTargetAtTime(0, audioCtx.currentTime, 0.05);
+                    audioIcon.className = 'fa-solid fa-volume-xmark text-amber-400';
+                    audioText.textContent = '聲音已關閉';
+                    audioToggleBtn.classList.remove('border-emerald-500/50', 'bg-emerald-950/30');
+                }
+            });
+
+            // Reset Button
+            resetBtn.addEventListener('click', () => {
+                state.n = 1;
+                state.m = 1;
+                state.L = 1.00;
+                state.v = 340;
+                state.A = 1.0;
+                state.timeSpeed = 1.0;
+
+                nSlider.value = 1;
+                mSlider.value = 1;
+                lSlider.value = 1.00;
+                vSlider.value = 340;
+                aSlider.value = 1.0;
+                timeSpeedSlider.value = 1.0;
+
+                nValueDisplay.textContent = '1';
+                mValueDisplay.textContent = '1';
+                lValueDisplay.textContent = '1.00 m';
+                vValueDisplay.textContent = '340 m/s';
+                aValueDisplay.textContent = '1.0x';
+
+                updateUI();
+            });
+
+            // Window Resize Listener
+            window.addEventListener('resize', resizeCanvas);
+        }
+
+        // Initialize Application on Window Load
+        window.onload = function () {
+            resizeCanvas();
+            setupEventListeners();
+            updateUI();
+            requestAnimationFrame(animate);
+        };
+    </script>
+</body>
+
+</html>
